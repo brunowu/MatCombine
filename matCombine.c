@@ -6,16 +6,13 @@ static char help[] = "Block matrix generator";
 
 PetscErrorCode matCombine(){
 
-	PetscInt       	ggn, ggm,k1, k2, i,m,n,k,gcol,grow, gn, gm;
-	double	      	nnz, gnnz;
-	PetscScalar		rnd_value, value;
-	PetscInt      	start, end, rstart, rend;
+	PetscInt       	k1,i,m,n;
+	double	      	gnnz;
+	PetscInt      	start, end;
 	PetscRandom   	rnd;
 	PetscInt 		size;
-	PetscInt 		nb;
 	PetscInt        ncols;
-	MatInfo     	minfo,Ainfo;
-	PetscBool 		nbflg, mtflg;
+	MatInfo     	Ainfo;
 	PetscErrorCode 	ierr;
 	Mat 			A;
 	PetscViewer    		output_viewer;
@@ -23,17 +20,15 @@ PetscErrorCode matCombine(){
 	const PetscInt    	*cols;
 	const PetscScalar 	*vals;
 	PetscInt		*gcols;
-    PetscInt 		idxcol;
-	char			type[PETSC_MAX_PATH_LEN];
 	char			m1file[PETSC_MAX_PATH_LEN];
 	char			m2file[PETSC_MAX_PATH_LEN];
 
 	PetscBool 		mat1flg,mat2flg;
-	PetscViewer 	mat1fd,mat2fd;
-	PetscInt 		size,mat1sizea,mat1sizeb,mat2sizea,mat2sizeb;
+	PetscViewer 	m1fd,m2fd;
+	PetscInt 		mat1sizea,mat1sizeb,mat2sizea,mat2sizeb;
 	Mat 			mat1, mat2;
-	PetscInt 		m, n;
-	PetscInt 		i, j, ind;
+//	PetscInt 		m, n;
+	PetscInt 		ind;
  
 	MPI_Comm_size(PETSC_COMM_WORLD,&size);
 
@@ -41,7 +36,7 @@ PetscErrorCode matCombine(){
 
 	ierr=PetscOptionsGetString(NULL,PETSC_NULL,"-m1file",m1file,PETSC_MAX_PATH_LEN-1,&mat1flg);CHKERRQ(ierr);
 	if (!mat1flg) {
-		PetscPrintf(PETSC_COMM_WORLD,"ERROR : The first matrix mfile is not properly set\n",filea);
+		PetscPrintf(PETSC_COMM_WORLD,"ERROR : The first matrix mfile is not properly set\n",m1file);
 		return 0;
 	}
 
@@ -55,7 +50,7 @@ PetscErrorCode matCombine(){
 
 	ierr=PetscOptionsGetString(NULL,PETSC_NULL,"-m2file",m2file,PETSC_MAX_PATH_LEN-1,&mat2flg);CHKERRQ(ierr);
 	if (!mat2flg) {
-		PetscPrintf(PETSC_COMM_WORLD,"ERROR : The Second matrix mfile is not properly set\n",filea);
+		PetscPrintf(PETSC_COMM_WORLD,"ERROR : The Second matrix mfile is not properly set\n",m2file);
 		return 0;
 	}
 
@@ -78,33 +73,40 @@ PetscErrorCode matCombine(){
   	ierr = MatSetUp(A);CHKERRQ(ierr);	
 	ierr = MatGetOwnershipRange(A, &start, &end);CHKERRQ(ierr);
 
-	for(i = start; i < end; i++){
-		if(i < mat1sizea){
-			MatGetRow(mat1,i,&ncols,&cols,&vals);
-			PetscMalloc1(ncols,&gcols);
-			ierr = MatSetValues(A,1,&i,ncols,gcols,vals,INSERT_VALUES);CHKERRQ(ierr);
-			MatRestoreRow(M,i,&ncols,&cols,&vals);
+	PetscInt m1start, m1end, m2start, m2end;
+        ierr = MatGetOwnershipRange(mat1, &m1start, &m1end);CHKERRQ(ierr);
+        ierr = MatGetOwnershipRange(mat2, &m2start, &m2end);CHKERRQ(ierr);
 
-		}
-		else{
-			ind = i - mat1sizea;
-			MatGetRow(mat2,ind,&ncols,&cols,&vals);
-			PetscMalloc1(ncols,&gcols);
-			ierr = MatSetValues(A,1,&i,ncols,gcols,vals,INSERT_VALUES);CHKERRQ(ierr);	
-			MatRestoreRow(M,ind,&ncols,&cols,&vals);
-		}
+	for(i = m1start; i < m1end; i++){
+		MatGetRow(mat1,i,&ncols,&cols,&vals);
+		//PetscPrintf(PETSC_COMM_WORLD, "val[2] = %f\n", vals[2]);
+//	        PetscMalloc1(ncols,&gcols);
+                ierr = MatSetValues(A,1,&i,ncols,cols,vals,INSERT_VALUES);CHKERRQ(ierr);
+                MatRestoreRow(mat1,i,&ncols,&cols,&vals);
 	}
+
+        for(i = m2start; i < m2end; i++){
+                MatGetRow(mat2,i,&ncols,&cols,&vals);
+                PetscMalloc1(ncols,&gcols);
+		ind = i + mat1sizea;
+		for(k1 = 0; k1 < ncols; k1++){
+			gcols[k1] = cols[k1] + mat1sizeb;
+		}
+                ierr = MatSetValues(A,1,&ind,ncols,gcols,vals,INSERT_VALUES);CHKERRQ(ierr);
+                MatRestoreRow(mat2,i,&ncols,&cols,&vals);
+        }
 
 	/*Matrix assembly*/
 	PetscPrintf(PETSC_COMM_WORLD,"Assembling matrix within PETSc.\n");
 	MatAssemblyBegin(A,MAT_FINAL_ASSEMBLY);
 	MatAssemblyEnd(A,MAT_FINAL_ASSEMBLY);
 //	MatView(A,PETSC_VIEWER_STDOUT_WORLD);
-    MatGetSize(A, &ggm, &ggn);
-    MatGetInfo(A,MAT_GLOBAL_SUM,&Ainfo);
-    gnnz = Ainfo.nz_used;
+   	MatGetInfo(A,MAT_GLOBAL_SUM,&Ainfo);
+//        MatGetInfo(mat2,MAT_GLOBAL_SUM,&mat2info);
+    	gnnz = Ainfo.nz_used;
+//	PetscPrintf(PETSC_COMM_WORLD, "mat1info = %g, mat2info = %g \n", mat1info.nz_used,mat2info.nz_used);
 	PetscPrintf(PETSC_COMM_WORLD,"Finished matrix assembly.\n");
-	sprintf(matrixOutputFile,"%s_nb_%d_%dx%d_%g_nnz.gz",type, nb, ggm,ggn,gnnz);
+	sprintf(matrixOutputFile,"Combine_nb_%dx%d_%g_nnz.gz", m,n,gnnz);
 	PetscPrintf(PETSC_COMM_WORLD,"Dumping matrix to PETSc binary %s\n",matrixOutputFile);	
 	PetscViewerBinaryOpen(PETSC_COMM_WORLD,matrixOutputFile,FILE_MODE_WRITE,&output_viewer);
 	PetscViewerPushFormat(output_viewer,PETSC_VIEWER_ASCII_INFO_DETAIL);
@@ -119,7 +121,7 @@ PetscErrorCode matCombine(){
 int main(int argc, char ** argv){
 
 	PetscInitialize(&argc,&argv,(char *)0,help);
-	MatGenbyOther();
+	matCombine();
 	PetscFinalize();
 
 	return 0;

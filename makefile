@@ -11,7 +11,8 @@ CLEANFILES  = ${EXEC}
 OFILES= ${wildcard ./*.o}
 
 #Execution flags
-MAT = utm300.mtx_300x300_3155nnz1
+#MAT = EBMG_matrix_nb_10_10x10_58_nnz
+MAT = utm300.mtx_300x300_3155nnz
 MPI_NODES = 2
 NB = 2
 MATTYPE = matblock
@@ -42,4 +43,4 @@ exec: matCombine.o
 	-@echo "========================================="
 
 runa:
-	-@${MPIEXEC} -np ${MPI_NODES} ./generateur -mfile ${MAT} -nb ${NB} -type ${MATTYPE}
+	-@${MPIEXEC} -np ${MPI_NODES} ./generateur -m1file ${MAT} -m2file ${MAT}
